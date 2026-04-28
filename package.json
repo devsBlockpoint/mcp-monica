@@ -1,0 +1,28 @@
+{
+  "name": "mcp-monica",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "MCP server that proxies the LLM to ÉLEVÉ Supabase Edge Functions",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "mcp:build": "tsx mcp/_generator.ts",
+    "mcp:build:include-pending": "tsx mcp/_generator.ts -- --include-pending"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "^1.0.0",
+    "gray-matter": "^4.0.3"
+  },
+  "devDependencies": {
+    "@types/node": "^20.14.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.0"
+  },
+  "engines": {
+    "node": ">=20.0.0"
+  }
+}
