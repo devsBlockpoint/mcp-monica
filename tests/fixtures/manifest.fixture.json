@@ -1,0 +1,20 @@
+{
+  "version": "1",
+  "generated_at": "2026-04-28T00:00:00.000Z",
+  "tools": [
+    {
+      "tool_name": "agendar_cita",
+      "edge_function": "book-appointment",
+      "description": "Crea una cita.",
+      "input_schema": { "type": "object", "required": ["fecha"], "properties": { "fecha": { "type": "string" } } },
+      "output_schema": null
+    },
+    {
+      "tool_name": "buscar_disponibilidad",
+      "edge_function": "check-availability",
+      "description": "Devuelve slots libres.",
+      "input_schema": { "type": "object", "properties": { "fecha": { "type": "string" } } },
+      "output_schema": null
+    }
+  ]
+}
