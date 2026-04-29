@@ -49,19 +49,13 @@ async function main() {
   const callEdgeFn = (name: string, input: unknown) =>
     callEdgeFunction({ baseUrl: supabaseUrl, serviceRoleKey }, name, input);
 
-  const { server: mcpServer } = createMcpServer({ tools, callEdgeFn });
-
-  // Stateless StreamableHTTP transport (no session state — each request
-  // is independent). Replaces the deprecated SSEServerTransport. The
-  // Claude Code MCP client connects via this transport at /mcp.
-  const transport = new StreamableHTTPServerTransport({
-    sessionIdGenerator: undefined, // stateless mode
-    enableJsonResponse: true,
-  });
-  await mcpServer.connect(transport);
-
   // Single HTTP server: /health for healthcheck, /mcp for MCP transport
   // (POST for client-to-server, GET for server-to-client streaming).
+  //
+  // Stateless StreamableHTTP: a fresh Server instance + transport are
+  // created per request (the MCP Server type does not allow re-using a
+  // single instance across multiple transport connections — it errors
+  // with "Already connected to a transport" on the second request).
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
@@ -72,7 +66,17 @@ async function main() {
     }
 
     if (url.pathname === "/mcp") {
+      const { server } = createMcpServer({ tools, callEdgeFn });
+      const transport = new StreamableHTTPServerTransport({
+        sessionIdGenerator: undefined, // stateless mode
+        enableJsonResponse: true,
+      });
+      res.on("close", () => {
+        transport.close().catch(() => {});
+        server.close().catch(() => {});
+      });
       try {
+        await server.connect(transport);
         const body = req.method === "POST" ? await readBody(req) : undefined;
         await transport.handleRequest(req, res, body);
       } catch (err) {
