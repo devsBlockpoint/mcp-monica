@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
-import { SSEServerTransport } from "@modelcontextprotocol/sdk/server/sse.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import { loadTools } from "./tools-loader.ts";
 import { callEdgeFunction } from "./supabase-client.ts";
 import { createMcpServer } from "./server.ts";
@@ -16,6 +16,23 @@ function requireEnv(name: string): string {
     process.exit(1);
   }
   return v;
+}
+
+async function readBody(req: IncomingMessage): Promise<unknown> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => {
+      const text = Buffer.concat(chunks).toString("utf8");
+      if (!text) return resolve(undefined);
+      try {
+        resolve(JSON.parse(text));
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on("error", reject);
+  });
 }
 
 async function main() {
@@ -34,7 +51,17 @@ async function main() {
 
   const { server: mcpServer } = createMcpServer({ tools, callEdgeFn });
 
-  // Single HTTP server: /health for healthcheck, /mcp/sse for MCP transport.
+  // Stateless StreamableHTTP transport (no session state — each request
+  // is independent). Replaces the deprecated SSEServerTransport. The
+  // Claude Code MCP client connects via this transport at /mcp.
+  const transport = new StreamableHTTPServerTransport({
+    sessionIdGenerator: undefined, // stateless mode
+    enableJsonResponse: true,
+  });
+  await mcpServer.connect(transport);
+
+  // Single HTTP server: /health for healthcheck, /mcp for MCP transport
+  // (POST for client-to-server, GET for server-to-client streaming).
   const httpServer = createServer(async (req: IncomingMessage, res: ServerResponse) => {
     const url = new URL(req.url ?? "/", `http://${req.headers.host ?? "localhost"}`);
 
@@ -44,10 +71,17 @@ async function main() {
       return;
     }
 
-    if (url.pathname === "/mcp/sse") {
-      const transport = new SSEServerTransport("/mcp/sse", res);
-      await mcpServer.connect(transport);
-      // SSEServerTransport keeps `res` open; do NOT call res.end() here.
+    if (url.pathname === "/mcp") {
+      try {
+        const body = req.method === "POST" ? await readBody(req) : undefined;
+        await transport.handleRequest(req, res, body);
+      } catch (err) {
+        console.error("mcp-monica: transport error:", err);
+        if (!res.headersSent) {
+          res.writeHead(500, { "Content-Type": "application/json" });
+          res.end(JSON.stringify({ error: "transport_error" }));
+        }
+      }
       return;
     }
 
@@ -57,8 +91,8 @@ async function main() {
 
   httpServer.listen(port, () => {
     console.log(`mcp-monica: listening on http://0.0.0.0:${port}`);
-    console.log(`  health: GET  /health`);
-    console.log(`  mcp:    GET  /mcp/sse`);
+    console.log(`  health: GET            /health`);
+    console.log(`  mcp:    POST/GET/DELETE /mcp  (StreamableHTTP transport)`);
   });
 
   // startHealthServer kept as helper module for future split scenarios.
