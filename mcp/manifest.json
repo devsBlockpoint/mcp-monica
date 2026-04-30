@@ -1,0 +1,669 @@
+{
+  "version": "1",
+  "generated_at": "2026-04-30T23:43:08.199Z",
+  "tools": [
+    {
+      "tool_name": "agendar_cita",
+      "edge_function": "book-appointment",
+      "description": "Crea una cita en estatus 'Pendiente de Anticipo'. Auto-asigna esteticista con menos citas ese día.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "nombre",
+          "whatsapp",
+          "fecha",
+          "hora",
+          "servicio_nombre"
+        ],
+        "properties": {
+          "nombre": {
+            "type": "string"
+          },
+          "whatsapp": {
+            "type": "string",
+            "description": "Solo dígitos, 10-15 caracteres"
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date"
+          },
+          "hora": {
+            "type": "string",
+            "pattern": "^[0-9]{2}:[0-9]{2}",
+            "description": "HH:MM 24h"
+          },
+          "servicio_nombre": {
+            "type": "string"
+          },
+          "servicio_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Opcional"
+          },
+          "esteticista_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Opcional"
+          },
+          "notas": {
+            "type": "string",
+            "description": "Opcional"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "cita_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "mensaje": {
+            "type": "string"
+          },
+          "datos_pago": {
+            "type": "object",
+            "properties": {
+              "banco": {
+                "type": "string"
+              },
+              "titular": {
+                "type": "string"
+              },
+              "clabe": {
+                "type": "string"
+              },
+              "concepto": {
+                "type": "string"
+              },
+              "monto": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "buscar_disponibilidad",
+      "edge_function": "check-availability",
+      "description": "Devuelve los slots de horario disponibles para una fecha dada.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "fecha"
+        ],
+        "properties": {
+          "fecha": {
+            "type": "string",
+            "format": "date",
+            "description": "YYYY-MM-DD"
+          },
+          "esteticista_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Opcional — filtra por esteticista específica"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "fecha": {
+            "type": "string",
+            "format": "date"
+          },
+          "horasDisponibles": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "description": "HH:MM"
+            }
+          },
+          "esteticistas": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "mensaje": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "cancel_appointment",
+      "edge_function": "cancel-appointment",
+      "description": "Cancela una cita, registrando el motivo. La cita queda con estatus='Cancelada'.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "cita_id"
+        ],
+        "properties": {
+          "cita_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "motivo": {
+            "type": "string",
+            "description": "Razón de la cancelación"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "cita_id": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "capture_lead_from_chat",
+      "edge_function": "capture-lead-from-chat",
+      "description": "Registra un lead a partir de una conversación entrante (cuando el usuario llegó por WhatsApp, no por formulario).",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "nombre",
+          "whatsapp",
+          "conversation_id"
+        ],
+        "properties": {
+          "nombre": {
+            "type": "string"
+          },
+          "whatsapp": {
+            "type": "string",
+            "description": "Solo dígitos, 10-15 caracteres (normalizado server-side)"
+          },
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "motivo": {
+            "type": "string",
+            "description": "Opcional"
+          },
+          "payload": {
+            "type": "object",
+            "description": "Opcional, jsonb arbitrario"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "lead_id": {
+            "type": "string",
+            "format": "uuid"
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "escalate_to_human",
+      "edge_function": "escalate-to-human",
+      "description": "Escala la conversación a un operador humano. Cambia agent_mode='human' y crea entrada en escalation_queue.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "conversation_id",
+          "motivo"
+        ],
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "motivo": {
+            "type": "string",
+            "description": "Razón de la escalación"
+          },
+          "prioridad": {
+            "type": "string",
+            "enum": [
+              "low",
+              "medium",
+              "high",
+              "urgent"
+            ],
+            "default": "medium"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "escalation_id": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "format": "uuid"
+          },
+          "warning": {
+            "type": "string",
+            "description": "Presente si escalation_queue insert falló pero la conversación se marcó OK"
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "get_appointments",
+      "edge_function": "get-appointments",
+      "description": "Lista citas próximas o pasadas de un paciente identificado por WhatsApp.",
+      "input_schema": {
+        "type": "object",
+        "description": "Al menos UNO de los filtros de identificación o rango debe estar presente.",
+        "properties": {
+          "paciente_whatsapp": {
+            "type": "string",
+            "description": "Solo dígitos"
+          },
+          "paciente_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fecha_desde": {
+            "type": "string",
+            "format": "date"
+          },
+          "fecha_hasta": {
+            "type": "string",
+            "format": "date"
+          },
+          "estatus": {
+            "type": "string",
+            "enum": [
+              "Confirmada",
+              "Realizada",
+              "Cancelada",
+              "Reprogramada",
+              "Pendiente de Anticipo"
+            ]
+          },
+          "timeframe": {
+            "type": "string",
+            "enum": [
+              "upcoming",
+              "past",
+              "all"
+            ]
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "citas": {
+            "type": "array",
+            "description": "Hasta 50 resultados, ordenados por fecha+hora ASC",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "fecha": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "hora": {
+                  "type": "string",
+                  "description": "HH:MM"
+                },
+                "paciente_nombre": {
+                  "type": "string"
+                },
+                "paciente_whatsapp": {
+                  "type": "string"
+                },
+                "servicio_nombre": {
+                  "type": "string"
+                },
+                "estatus": {
+                  "type": "string"
+                },
+                "esteticista_nombre": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "get_current_promotions",
+      "edge_function": "get-current-promotions",
+      "description": "Devuelve las promociones activas configuradas en ofertas_config (Ofertas Doradas, etc.).",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "promociones": {
+            "type": "array",
+            "description": "Filtro: WHERE activo=true AND fecha_fin >= now() ORDER BY fecha_fin ASC",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "nombre": {
+                  "type": "string"
+                },
+                "fecha_inicio": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "fecha_fin": {
+                  "type": "string",
+                  "format": "date"
+                },
+                "activo": {
+                  "type": "boolean"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "get_treatment_detail",
+      "edge_function": "get-treatment-detail",
+      "description": "Información detallada de un tratamiento específico (mecanismo, equipo, sesiones, contraindicaciones).",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "slug"
+        ],
+        "properties": {
+          "slug": {
+            "type": "string",
+            "description": "Identificador slug del tratamiento (ej. 'hifu-12d')"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "slug": {
+            "type": "string"
+          },
+          "nombre": {
+            "type": "string"
+          },
+          "descripcion": {
+            "type": "string"
+          },
+          "precio_regular": {
+            "type": "integer"
+          },
+          "duracion_minutos": {
+            "type": "integer"
+          },
+          "para_quien": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "no_para_quien": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "proceso": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "faqs": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "q": {
+                  "type": "string"
+                },
+                "a": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "obtener_servicios",
+      "edge_function": "get-services",
+      "description": "Lista los servicios disponibles (paquetes y sesiones individuales) con precios y duración.",
+      "input_schema": {
+        "type": "object",
+        "properties": {}
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "paquetes": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "nombre": {
+                  "type": "string"
+                },
+                "precio_regular": {
+                  "type": "integer"
+                },
+                "precio_especial": {
+                  "type": "integer"
+                },
+                "categoria": {
+                  "type": "string"
+                },
+                "sesiones": {
+                  "type": "integer"
+                },
+                "ahorro": {
+                  "type": "integer"
+                },
+                "descripcion": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "serviciosIndividuales": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "nombre": {
+                  "type": "string"
+                },
+                "precio_regular": {
+                  "type": "integer"
+                },
+                "categoria": {
+                  "type": "string"
+                },
+                "duracion_minutos": {
+                  "type": "integer"
+                },
+                "descripcion": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "reschedule_appointment",
+      "edge_function": "reschedule-appointment",
+      "description": "Reagenda una cita a nueva fecha/hora. Mantiene el mismo paciente y servicio.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "cita_id",
+          "nueva_fecha",
+          "nueva_hora"
+        ],
+        "properties": {
+          "cita_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "nueva_fecha": {
+            "type": "string",
+            "format": "date"
+          },
+          "nueva_hora": {
+            "type": "string",
+            "pattern": "^[0-9]{2}:[0-9]{2}",
+            "description": "HH:MM"
+          },
+          "tipo": {
+            "type": "string",
+            "enum": [
+              "antes",
+              "despues"
+            ],
+            "description": "Opcional — si se omite, estatus default 'Reprogramada'"
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "cita_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "fecha": {
+            "type": "string",
+            "format": "date"
+          },
+          "hora": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    {
+      "tool_name": "search_patient",
+      "edge_function": "search-patient",
+      "description": "Busca pacientes por número de WhatsApp o nombre parcial.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "whatsapp": {
+            "type": "string",
+            "description": "Solo dígitos, búsqueda exacta"
+          },
+          "nombre": {
+            "type": "string",
+            "description": "Substring case-insensitive"
+          }
+        },
+        "oneOf": [
+          {
+            "required": [
+              "whatsapp"
+            ]
+          },
+          {
+            "required": [
+              "nombre"
+            ]
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "pacientes": {
+            "type": "array",
+            "description": "Hasta 10 resultados",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "format": "uuid"
+                },
+                "nombre_completo": {
+                  "type": "string"
+                },
+                "whatsapp": {
+                  "type": "string"
+                },
+                "telefono": {
+                  "type": "string"
+                },
+                "email": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                },
+                "fecha_nacimiento": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "format": "date"
+                },
+                "notas": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  ]
+}
