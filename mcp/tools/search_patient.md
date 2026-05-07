@@ -2,15 +2,13 @@
 tool_name: search_patient
 edge_function: search-patient
 mcp_exposed: true
-description: Busca pacientes por número de WhatsApp o nombre parcial.
+description: Busca pacientes por número de WhatsApp o nombre parcial. Pasá al menos UNO de los dos.
 input_schema:
   type: object
+  description: "Al menos UNO de whatsapp o nombre debe estar presente."
   properties:
-    whatsapp: { type: string, description: "Solo dígitos, búsqueda exacta" }
-    nombre: { type: string, description: "Substring case-insensitive" }
-  oneOf:
-    - required: [whatsapp]
-    - required: [nombre]
+    whatsapp: { type: string, description: "Solo dígitos, búsqueda exacta. Opcional si pasás nombre." }
+    nombre: { type: string, description: "Substring case-insensitive. Opcional si pasás whatsapp." }
 output_schema:
   type: object
   properties:

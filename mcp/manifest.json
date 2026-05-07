@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-04-30T23:43:08.199Z",
+  "generated_at": "2026-05-04T21:54:25.333Z",
   "tools": [
     {
       "tool_name": "agendar_cita",
@@ -592,31 +592,20 @@
     {
       "tool_name": "search_patient",
       "edge_function": "search-patient",
-      "description": "Busca pacientes por número de WhatsApp o nombre parcial.",
+      "description": "Busca pacientes por número de WhatsApp o nombre parcial. Pasá al menos UNO de los dos.",
       "input_schema": {
         "type": "object",
+        "description": "Al menos UNO de whatsapp o nombre debe estar presente.",
         "properties": {
           "whatsapp": {
             "type": "string",
-            "description": "Solo dígitos, búsqueda exacta"
+            "description": "Solo dígitos, búsqueda exacta. Opcional si pasás nombre."
           },
           "nombre": {
             "type": "string",
-            "description": "Substring case-insensitive"
+            "description": "Substring case-insensitive. Opcional si pasás whatsapp."
           }
-        },
-        "oneOf": [
-          {
-            "required": [
-              "whatsapp"
-            ]
-          },
-          {
-            "required": [
-              "nombre"
-            ]
-          }
-        ]
+        }
       },
       "output_schema": {
         "type": "object",
