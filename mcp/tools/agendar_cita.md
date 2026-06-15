@@ -2,13 +2,15 @@
 tool_name: agendar_cita
 edge_function: book-appointment
 mcp_exposed: true
-description: Crea una cita en estatus 'Pendiente de Anticipo'. Auto-asigna esteticista con menos citas ese día.
+description: Crea una cita en estatus 'Pendiente de Anticipo'. Auto-asigna esteticista con menos citas ese día. Multicanal (WhatsApp, Instagram, Messenger).
 input_schema:
   type: object
-  required: [nombre, whatsapp, fecha, hora, servicio_nombre]
+  required: [nombre, fecha, hora, servicio_nombre]
   properties:
     nombre: { type: string }
-    whatsapp: { type: string, description: "Solo dígitos, 10-15 caracteres" }
+    channel: { type: string, enum: [whatsapp, instagram, messenger], default: whatsapp, description: "Canal de origen de la conversación. Default whatsapp." }
+    whatsapp: { type: string, description: "Solo dígitos, 10-15 caracteres. Opcional cuando channel=instagram/messenger." }
+    external_id: { type: string, description: "Identificador scoped del canal: IGSID (Instagram) o PSID (Messenger). Para whatsapp usar el campo whatsapp." }
     fecha: { type: string, format: date }
     hora: { type: string, pattern: "^[0-9]{2}:[0-9]{2}", description: "HH:MM 24h" }
     servicio_nombre: { type: string }
@@ -30,7 +32,8 @@ output_schema:
         concepto: { type: string }
         monto: { type: string }
 side_effects:
-  - "INSERT pacientes (si whatsapp no existe)"
+  - "INSERT pacientes (si no existe identidad de canal para (channel, external_id))"
+  - "INSERT channel_identities (upsert para vincular paciente al canal)"
   - "INSERT citas (estatus='Pendiente de Anticipo')"
   - "Auto-asigna esteticista con menos citas ese día"
   - "Notifica n8n-calendar-webhook (best-effort vía useCitas en frontend; aquí no aplica)"
@@ -41,7 +44,7 @@ errors:
   - code: horario_no_disponible
     when: Slot ya no disponible
 implementation_status: implemented
-related_db_tables: [citas, pacientes, esteticistas]
+related_db_tables: [citas, pacientes, esteticistas, channel_identities]
 ---
 
 # agendar_cita
@@ -49,7 +52,7 @@ related_db_tables: [citas, pacientes, esteticistas]
 Confirma una cita después de que el usuario eligió un slot.
 
 ## Cuándo invocar
-- Usuario confirmó nombre, WhatsApp, fecha, hora y servicio
+- Usuario confirmó nombre, fecha, hora y servicio
 - `buscar_disponibilidad` reciente confirmó el slot
 
 ## Cuándo NO invocar

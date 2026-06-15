@@ -1,16 +1,15 @@
 {
   "version": "1",
-  "generated_at": "2026-05-04T21:54:25.333Z",
+  "generated_at": "2026-06-15T20:45:12.598Z",
   "tools": [
     {
       "tool_name": "agendar_cita",
       "edge_function": "book-appointment",
-      "description": "Crea una cita en estatus 'Pendiente de Anticipo'. Auto-asigna esteticista con menos citas ese día.",
+      "description": "Crea una cita en estatus 'Pendiente de Anticipo'. Auto-asigna esteticista con menos citas ese día. Multicanal (WhatsApp, Instagram, Messenger).",
       "input_schema": {
         "type": "object",
         "required": [
           "nombre",
-          "whatsapp",
           "fecha",
           "hora",
           "servicio_nombre"
@@ -19,9 +18,23 @@
           "nombre": {
             "type": "string"
           },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "whatsapp",
+              "instagram",
+              "messenger"
+            ],
+            "default": "whatsapp",
+            "description": "Canal de origen de la conversación. Default whatsapp."
+          },
           "whatsapp": {
             "type": "string",
-            "description": "Solo dígitos, 10-15 caracteres"
+            "description": "Solo dígitos, 10-15 caracteres. Opcional cuando channel=instagram/messenger."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Identificador scoped del canal: IGSID (Instagram) o PSID (Messenger). Para whatsapp usar el campo whatsapp."
           },
           "fecha": {
             "type": "string",
@@ -170,21 +183,34 @@
     {
       "tool_name": "capture_lead_from_chat",
       "edge_function": "capture-lead-from-chat",
-      "description": "Registra un lead a partir de una conversación entrante (cuando el usuario llegó por WhatsApp, no por formulario).",
+      "description": "Registra un lead a partir de una conversación entrante. Multicanal (WhatsApp, Instagram, Messenger).",
       "input_schema": {
         "type": "object",
         "required": [
           "nombre",
-          "whatsapp",
           "conversation_id"
         ],
         "properties": {
           "nombre": {
             "type": "string"
           },
+          "channel": {
+            "type": "string",
+            "enum": [
+              "whatsapp",
+              "instagram",
+              "messenger"
+            ],
+            "default": "whatsapp",
+            "description": "Canal de origen de la conversación. Default whatsapp."
+          },
           "whatsapp": {
             "type": "string",
-            "description": "Solo dígitos, 10-15 caracteres (normalizado server-side)"
+            "description": "Número de teléfono (solo dígitos, 10-15 caracteres). Opcional cuando channel=instagram/messenger."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Identificador scoped del canal: IGSID (Instagram) o PSID (Messenger). Para whatsapp usar el campo whatsapp."
           },
           "conversation_id": {
             "type": "string",
@@ -592,18 +618,31 @@
     {
       "tool_name": "search_patient",
       "edge_function": "search-patient",
-      "description": "Busca pacientes por número de WhatsApp o nombre parcial. Pasá al menos UNO de los dos.",
+      "description": "Busca pacientes por número de WhatsApp, external_id de canal o nombre parcial. Pasá al menos UNO.",
       "input_schema": {
         "type": "object",
-        "description": "Al menos UNO de whatsapp o nombre debe estar presente.",
+        "description": "Al menos UNO de whatsapp, external_id o nombre debe estar presente.",
         "properties": {
+          "channel": {
+            "type": "string",
+            "enum": [
+              "whatsapp",
+              "instagram",
+              "messenger"
+            ],
+            "description": "Canal de origen. Si se pasa, la búsqueda se hace por identidad de canal (channel + external_id). Default whatsapp."
+          },
           "whatsapp": {
             "type": "string",
-            "description": "Solo dígitos, búsqueda exacta. Opcional si pasás nombre."
+            "description": "Solo dígitos, búsqueda exacta. Opcional si pasás external_id o nombre."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Identificador scoped del canal: IGSID (Instagram) o PSID (Messenger). Para whatsapp usar el campo whatsapp."
           },
           "nombre": {
             "type": "string",
-            "description": "Substring case-insensitive. Opcional si pasás whatsapp."
+            "description": "Substring case-insensitive. Opcional si pasás whatsapp o external_id."
           }
         }
       },
