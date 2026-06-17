@@ -15,6 +15,9 @@ input_schema:
       type: string
       format: uuid
       description: "Opcional — filtra por esteticista específica"
+    servicio_nombre:
+      type: string
+      description: "Nombre exacto del servicio (de obtener_servicios). Determina la duración para calcular slots que no se empalmen. Si se omite, se asume 60 min."
 output_schema:
   type: object
   properties:
@@ -41,5 +44,6 @@ Consulta horarios libres considerando todas las esteticistas activas y citas exi
 - Si la respuesta de `buscar_disponibilidad` tiene >5 minutos, re-llamar antes de `agendar_cita`
 
 ## Notas
-- Filtra esteticistas con `estatus='Activa'`
-- No considera disponibilidad de equipo (TODO: extender)
+- Filtra esteticistas con `estatus='Activa'`.
+- **Pasá `servicio_nombre`** (el que el usuario eligió, de `obtener_servicios`) para que los slots respeten la duración real del tratamiento y no se empalmen.
+- Considera la duración de las citas existentes: ocupa el bloque completo `[inicio, inicio+duración)`, no solo la hora de inicio.

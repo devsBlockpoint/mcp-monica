@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-06-15T20:45:12.598Z",
+  "generated_at": "2026-06-17T18:32:06.021Z",
   "tools": [
     {
       "tool_name": "agendar_cita",
@@ -119,6 +119,10 @@
             "type": "string",
             "format": "uuid",
             "description": "Opcional — filtra por esteticista específica"
+          },
+          "servicio_nombre": {
+            "type": "string",
+            "description": "Nombre exacto del servicio (de obtener_servicios). Determina la duración para calcular slots que no se empalmen. Si se omite, se asume 60 min."
           }
         }
       },
