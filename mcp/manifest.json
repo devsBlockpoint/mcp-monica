@@ -1,7 +1,49 @@
 {
   "version": "1",
-  "generated_at": "2026-06-17T18:32:06.021Z",
+  "generated_at": "2026-06-18T18:27:30.684Z",
   "tools": [
+    {
+      "tool_name": "actualizar_datos_contacto",
+      "edge_function": "update-contact-data",
+      "description": "Completa o corrige los datos de identidad del contacto (nombre, teléfono, correo) de una conversación.",
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "conversation_id"
+        ],
+        "properties": {
+          "conversation_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "ID de la conversación actual."
+          },
+          "nombre_completo": {
+            "type": "string",
+            "description": "Nombre y apellido del cliente, concatenados."
+          },
+          "telefono": {
+            "type": "string",
+            "description": "Teléfono (solo dígitos). Si matchea un paciente existente, vincula la conversación a ese paciente."
+          },
+          "correo": {
+            "type": "string",
+            "description": "Correo electrónico."
+          }
+        }
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "paciente_id": {
+            "type": "string",
+            "description": "Paciente vinculado, si se resolvió."
+          }
+        }
+      }
+    },
     {
       "tool_name": "agendar_cita",
       "edge_function": "book-appointment",
