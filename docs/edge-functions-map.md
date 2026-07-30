@@ -4,27 +4,28 @@ Mapeo entre tools del MCP, edge functions de Supabase y tablas afectadas. **Sour
 
 ## Tools `implemented` (expuestas en runtime)
 
-> Lista derivada de `mcp/manifest.json` actual. Para regenerar: `npm run mcp:build`.
+> Lista derivada de `mcp/manifest.json` actual (12 tools). Para regenerar: `npm run mcp:build`.
 
 | Tool (LLM) | Edge function | Tablas afectadas | Side effects |
 |---|---|---|---|
-| `agendar_cita` | `book-appointment` | `citas`, `pacientes`, `esteticistas` | INSERT pacientes (si nuevo), INSERT citas (Pendiente de Anticipo), auto-asigna esteticista |
+| `agendar_cita` | `book-appointment` | `citas`, `pacientes`, `esteticistas`, `channel_identities` | INSERT pacientes (si nuevo), INSERT citas (Pendiente de Anticipo), auto-asigna esteticista |
 | `buscar_disponibilidad` | `check-availability` | `citas`, `esteticistas` | Solo lectura |
+| `cancel_appointment` | `cancel-appointment` | `citas` | UPDATE cita → cancelada |
+| `reschedule_appointment` | `reschedule-appointment` | `citas`, `esteticistas` | UPDATE cita (fecha/hora), reasigna esteticista |
+| `get_appointments` | `get-appointments` | `citas`, `pacientes` | Solo lectura |
+| `obtener_servicios` | `get-services` | `servicios_paquetes`, `servicios_sesiones` | Solo lectura |
+| `get_treatment_detail` | `get-treatment-detail` | `servicios_paquetes`, `servicios_sesiones`, `equipos` | Solo lectura |
+| `get_current_promotions` | `get-current-promotions` | `ofertas_config` | Solo lectura |
+| `search_patient` | `search-patient` | `pacientes`, `channel_identities` | Solo lectura |
+| `capture_lead_from_chat` | `capture-lead-from-chat` | `leads`, `whatsapp_conversations` | INSERT leads; trigger DB dispara lead-pickup → CRM |
+| `escalate_to_human` | `escalate-to-human` | `whatsapp_conversations`, `escalation_queue` | UPDATE conversación (agent_mode='human'), INSERT escalation_queue |
+| `actualizar_datos_contacto` | `update-contact-data` | `whatsapp_conversations`, `pacientes`, `leads`, `channel_identities` | UPDATE datos de contacto |
 
-## Tools `pending` (documentadas, no expuestas hasta migrar)
+## Tools NO expuestas
 
-| Tool | Edge function | Estado |
-|---|---|---|
-| `cancel_appointment` | `cancel-appointment` | pending |
-| `reschedule_appointment` | `reschedule-appointment` | pending |
-| `get_appointments` | `get-appointments` | pending |
-| `obtener_servicios` | `get-services` | pending |
-| `get_treatment_detail` | `get-treatment-detail` | pending |
-| `get_current_promotions` | `get-current-promotions` | pending |
-| `search_patient` | `search-patient` | pending |
-| `capture_lead_from_chat` | `capture-lead-from-chat` | pending |
-| `send_payment_link` | `send-payment-link` | blocked_on_payment_gateway |
-| `escalate_to_human` | `escalate-to-human` | pending |
+| Tool | Edge function | Estado | Motivo |
+|---|---|---|---|
+| `send_payment_link` | `send-payment-link` | `blocked_on_payment_gateway` | Bloqueada hasta integrar la pasarela de pagos |
 
 ## Cómo se llaman
 
