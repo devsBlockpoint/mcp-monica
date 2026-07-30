@@ -8,6 +8,7 @@ import { createMcpServer } from "./server.ts";
 import { startHealthServer } from "./health.ts";
 import { isAuthorized } from "./auth.ts";
 import { handleToolHttpCall } from "./tool-http.ts";
+import { normalizeCallerId, buildInitResponse, verifyElevenSignature } from "./eleven-webhooks.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -37,6 +38,16 @@ async function readBody(req: IncomingMessage): Promise<unknown> {
   });
 }
 
+/** Read the raw request body as a string (needed to verify HMAC signatures). */
+async function readRawBody(req: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    req.on("data", (c: Buffer) => chunks.push(c));
+    req.on("end", () => resolve(Buffer.concat(chunks).toString("utf8")));
+    req.on("error", reject);
+  });
+}
+
 async function main() {
   const supabaseUrl = requireEnv("SUPABASE_URL");
   const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
@@ -45,6 +56,12 @@ async function main() {
   // private network). Set it before exposing /mcp to an external MCP client
   // (e.g. ElevenLabs) over the public internet. See src/auth.ts.
   const mcpAuthToken = process.env.MCP_AUTH_TOKEN;
+  // Secret used to verify ElevenLabs post-call webhook HMAC signatures. Unset =
+  // verification disabled (opt-in). Set it in production. See eleven-webhooks.ts.
+  const elevenWebhookSecret = process.env.ELEVENLABS_WEBHOOK_SECRET;
+  // Optional Supabase edge function to forward the full post-call payload to
+  // (transcript/analysis records). Unset = just log the summary.
+  const postCallEdgeFn = process.env.ELEVEN_POSTCALL_EDGE_FN;
 
   const manifestPath =
     process.env.MCP_MONICA_MANIFEST_PATH ?? join(__dirname, "..", "mcp", "manifest.json");
@@ -126,6 +143,63 @@ async function main() {
       const { status, body } = await handleToolHttpCall(tools, callEdgeFn, toolName, args);
       res.writeHead(status, { "Content-Type": "application/json" });
       res.end(JSON.stringify(body));
+      return;
+    }
+
+    // ElevenLabs conversation-initiation webhook: look up the patient by caller
+    // id and return dynamic variables for the Mónica voice agent.
+    if (url.pathname === "/webhooks/eleven-init") {
+      if (!isAuthorized(req.headers.authorization, mcpAuthToken)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
+      let callerId: string | null = null;
+      try {
+        const payload = (await readBody(req)) as { caller_id?: unknown } | undefined;
+        callerId = normalizeCallerId(
+          typeof payload?.caller_id === "string" ? payload.caller_id : undefined,
+        );
+      } catch {
+        callerId = null;
+      }
+      let pacientes: unknown;
+      if (callerId) {
+        const result = await callEdgeFn("search-patient", { whatsapp: callerId });
+        if (result.ok) pacientes = (result.data as { pacientes?: unknown })?.pacientes;
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(buildInitResponse(pacientes)));
+      return;
+    }
+
+    // ElevenLabs post-call webhook: verify the HMAC signature, then log the
+    // outcome (business writes already happened via tools during the call) and
+    // optionally forward the transcript to a Supabase edge function.
+    if (url.pathname === "/webhooks/eleven-post-call") {
+      const raw = await readRawBody(req);
+      const sig = req.headers["elevenlabs-signature"];
+      const sigHeader = Array.isArray(sig) ? sig[0] : sig;
+      if (!verifyElevenSignature(raw, sigHeader, elevenWebhookSecret, Date.now(), 1800)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "invalid_signature" }));
+        return;
+      }
+      let data: { data?: { conversation_id?: unknown; analysis?: { call_successful?: unknown } } } = {};
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        /* keep empty on non-JSON body */
+      }
+      console.log(
+        `mcp-monica: post-call conversation=${String(data?.data?.conversation_id)} ` +
+          `successful=${String(data?.data?.analysis?.call_successful)}`,
+      );
+      if (postCallEdgeFn && raw) {
+        await callEdgeFn(postCallEdgeFn, data);
+      }
+      res.writeHead(200, { "Content-Type": "application/json" });
+      res.end(JSON.stringify({ received: true }));
       return;
     }
 
