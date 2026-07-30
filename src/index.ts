@@ -6,6 +6,7 @@ import { loadTools } from "./tools-loader.ts";
 import { callEdgeFunction } from "./supabase-client.ts";
 import { createMcpServer } from "./server.ts";
 import { startHealthServer } from "./health.ts";
+import { isAuthorized } from "./auth.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -39,6 +40,10 @@ async function main() {
   const supabaseUrl = requireEnv("SUPABASE_URL");
   const serviceRoleKey = requireEnv("SUPABASE_SERVICE_ROLE_KEY");
   const port = Number(process.env.MCP_PORT ?? "3000");
+  // Optional bearer token guarding /mcp. Unset = guard disabled (safe only on a
+  // private network). Set it before exposing /mcp to an external MCP client
+  // (e.g. ElevenLabs) over the public internet. See src/auth.ts.
+  const mcpAuthToken = process.env.MCP_AUTH_TOKEN;
 
   const manifestPath =
     process.env.MCP_MONICA_MANIFEST_PATH ?? join(__dirname, "..", "mcp", "manifest.json");
@@ -66,6 +71,11 @@ async function main() {
     }
 
     if (url.pathname === "/mcp") {
+      if (!isAuthorized(req.headers.authorization, mcpAuthToken)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
       const { server } = createMcpServer({ tools, callEdgeFn });
       const transport = new StreamableHTTPServerTransport({
         sessionIdGenerator: undefined, // stateless mode
