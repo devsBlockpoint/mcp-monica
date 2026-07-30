@@ -7,6 +7,7 @@ import { callEdgeFunction } from "./supabase-client.ts";
 import { createMcpServer } from "./server.ts";
 import { startHealthServer } from "./health.ts";
 import { isAuthorized } from "./auth.ts";
+import { handleToolHttpCall } from "./tool-http.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -96,6 +97,35 @@ async function main() {
           res.end(JSON.stringify({ error: "transport_error" }));
         }
       }
+      return;
+    }
+
+    // REST tool-gateway for non-MCP consumers (e.g. ElevenLabs webhook tools):
+    // POST /tools/<name> with the tool args as a flat JSON body. Same bearer
+    // token guard as /mcp; the service_role key never leaves this server.
+    if (url.pathname.startsWith("/tools/")) {
+      if (req.method !== "POST") {
+        res.writeHead(405, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "method_not_allowed" }));
+        return;
+      }
+      if (!isAuthorized(req.headers.authorization, mcpAuthToken)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
+      const toolName = decodeURIComponent(url.pathname.slice("/tools/".length));
+      let args: unknown;
+      try {
+        args = await readBody(req);
+      } catch {
+        res.writeHead(400, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "invalid_json" }));
+        return;
+      }
+      const { status, body } = await handleToolHttpCall(tools, callEdgeFn, toolName, args);
+      res.writeHead(status, { "Content-Type": "application/json" });
+      res.end(JSON.stringify(body));
       return;
     }
 
