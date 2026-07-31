@@ -166,13 +166,15 @@ export interface Validacion {
  * recortar sin perder cosas que deben aplicar SIEMPRE, y no pueden vivir en la
  * Knowledge Base porque un miss del RAG las apagaría en silencio.
  *
- * Subido a 19.000 para dejar margen real: con el prompt pegado al límite,
- * cualquier edición del negocio en el maestro bloquearía la publicación. La
- * proyección actual pesa ~18.360, así que quedan ~640 de holgura.
+ * 21.000 (~5.250 tokens). El número existe para atajar un error real —que
+ * alguien pegue conocimiento dentro de un bloque de comportamiento, y la KB
+ * pesa 109.000— no para forzar recortes de prosa. La proyección pesa ~18.900,
+ * así que quedan ~2.100 de holgura: suficiente para que una edición del negocio
+ * en el maestro no bloquee la publicación.
  * Lo que NO cabe acá va a la Knowledge Base, donde un miss produce una consulta
  * y no un daño (§0 obliga a escalar en vez de improvisar).
  */
-const MAX_CHARS = 19_000;
+const MAX_CHARS = 21_000;
 const MIN_CHARS = 40;
 
 /** 16+ dígitos seguidos (con espacios o guiones) = tarjeta o CLABE, nunca un teléfono. */
