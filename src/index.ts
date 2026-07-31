@@ -171,6 +171,15 @@ async function main() {
     // recarga periódica (AGENT_SYSTEM_PROMPT_URL) y cachea en disco, así que un
     // 503 acá nunca lo deja sin prompt: sigue con su última copia buena.
     if (url.pathname === "/prompt/texto") {
+      // Mismo guard que /mcp y /tools. Esta proyección lleva el prompt COMPLETO:
+      // precios, márgenes, playbook de ventas, reglas de escalamiento y los datos
+      // bancarios de respaldo de §6.2 (CLABE y titular). Sin token, cualquiera con
+      // la URL se descarga la operación comercial entera.
+      if (!isAuthorized(req.headers.authorization, mcpAuthToken)) {
+        res.writeHead(401, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "unauthorized" }));
+        return;
+      }
       if (!promptService) {
         res.writeHead(503, { "Content-Type": "application/json" });
         res.end(JSON.stringify({ error: "proyector_no_configurado" }));
