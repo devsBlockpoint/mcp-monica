@@ -1,0 +1,49 @@
+name: Construir y publicar imagen
+
+# Vive EN ESTE REPO a propósito. El primer intento puso el workflow en el
+# monorepo eleve-nanoclaw, pero ahí `mcp-monica/` es un repo separado e ignorado
+# por git: el checkout traía la carpeta vacía y el build fallaba con
+# "unable to prepare context: path mcp-monica not found".
+#
+# Existe porque las imágenes se construían A MANO: un push dejaba el código nuevo
+# en GitHub mientras el registro seguía con la imagen vieja, y el deploy bajaba
+# fielmente esa versión anterior, sin ningún error visible.
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # El SHA va como tag además de latest: sin él no hay forma de saber qué
+      # código corre en producción — que fue exactamente el problema.
+      - id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ghcr.io/devsblockpoint/mcp-monica
+          tags: |
+            type=raw,value=latest
+            type=sha,format=short
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
