@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { readFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
@@ -9,6 +10,7 @@ import { startHealthServer } from "./health.ts";
 import { isAuthorized } from "./auth.ts";
 import { handleToolHttpCall } from "./tool-http.ts";
 import { normalizeCallerId, buildInitResponse, verifyElevenSignature } from "./eleven-webhooks.ts";
+import { crearPromptService } from "./prompt-service.ts";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -69,8 +71,27 @@ async function main() {
   const tools = await loadTools(manifestPath);
   console.log(`mcp-monica: loaded ${tools.length} tools from ${manifestPath}`);
 
-  const callEdgeFn = (name: string, input: unknown) =>
-    callEdgeFunction({ baseUrl: supabaseUrl, serviceRoleKey }, name, input);
+  // Proyector de prompt: una fuente maestra -> proyección por canal. Opcional:
+  // si no hay URL de maestro configurada, el endpoint responde 503 y nanoclaw
+  // sigue con la fuente que tenga configurada hoy.
+  const promptDir = process.env.MONICA_PROMPT_DIR ?? join(__dirname, "..", "prompt");
+  const masterUrl = process.env.MONICA_PROMPT_MASTER_URL;
+  let promptService: ReturnType<typeof crearPromptService> | null = null;
+  if (masterUrl) {
+    try {
+      const [reglasTexto, reglasVoz] = await Promise.all([
+        readFile(join(promptDir, "canal-texto.md"), "utf8"),
+        readFile(join(promptDir, "canal-voz.md"), "utf8"),
+      ]);
+      promptService = crearPromptService({ masterUrl, reglasTexto, reglasVoz });
+      console.log(`mcp-monica: proyector de prompt activo (reglas de canal desde ${promptDir})`);
+    } catch (err) {
+      console.error("mcp-monica: no se pudieron leer las reglas de canal; proyector desactivado:", err);
+    }
+  }
+
+  const callEdgeFn = (name: string, input: unknown, authOverride?: string) =>
+    callEdgeFunction({ baseUrl: supabaseUrl, serviceRoleKey }, name, input, authOverride);
 
   // Single HTTP server: /health for healthcheck, /mcp for MCP transport
   // (POST for client-to-server, GET for server-to-client streaming).
@@ -146,6 +167,29 @@ async function main() {
       return;
     }
 
+    // Proyección del prompt para el canal de TEXTO. nanoclaw la consume con su
+    // recarga periódica (AGENT_SYSTEM_PROMPT_URL) y cachea en disco, así que un
+    // 503 acá nunca lo deja sin prompt: sigue con su última copia buena.
+    if (url.pathname === "/prompt/texto") {
+      if (!promptService) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "proyector_no_configurado" }));
+        return;
+      }
+      const r = await promptService.texto();
+      if (!r.ok) {
+        res.writeHead(503, { "Content-Type": "application/json" });
+        res.end(JSON.stringify({ error: "maestro_no_disponible", detalle: r.error }));
+        return;
+      }
+      res.writeHead(200, {
+        "Content-Type": "text/plain; charset=utf-8",
+        "X-Prompt-Desde-Cache": String(r.desdeCache),
+      });
+      res.end(r.contenido);
+      return;
+    }
+
     // ElevenLabs conversation-initiation webhook: look up the patient by caller
     // id and return dynamic variables for the Mónica voice agent.
     if (url.pathname === "/webhooks/eleven-init") {
@@ -163,13 +207,21 @@ async function main() {
       } catch {
         callerId = null;
       }
-      let pacientes: unknown;
+      // patient-context resuelve la identidad Y devuelve el expediente vivo ya
+      // redactado (A01). Antes esto llamaba a search-patient, que solo traía el
+      // nombre: Mónica reconocía a la persona pero no sabía nada de lo hablado
+      // antes, así que cada llamada empezaba de cero.
+      let contexto: unknown;
       if (callerId) {
-        const result = await callEdgeFn("search-patient", { whatsapp: callerId });
-        if (result.ok) pacientes = (result.data as { pacientes?: unknown })?.pacientes;
+        const result = await callEdgeFn("patient-context", {
+          channel: "llamada",
+          external_id: callerId,
+          telefono: callerId,
+        });
+        if (result.ok) contexto = result.data;
       }
       res.writeHead(200, { "Content-Type": "application/json" });
-      res.end(JSON.stringify(buildInitResponse(pacientes)));
+      res.end(JSON.stringify(buildInitResponse(contexto)));
       return;
     }
 
@@ -196,7 +248,10 @@ async function main() {
           `successful=${String(data?.data?.analysis?.call_successful)}`,
       );
       if (postCallEdgeFn && raw) {
-        await callEdgeFn(postCallEdgeFn, data);
+        // Si la edge function tiene su propio guard (INGEST_CALL_TOKEN), se le
+        // manda ESE token y no la service_role: de lo contrario rechazaría cada
+        // entrega con 401 y las llamadas nunca llegarían al CRM.
+        await callEdgeFn(postCallEdgeFn, data, process.env.INGEST_CALL_TOKEN);
       }
       res.writeHead(200, { "Content-Type": "application/json" });
       res.end(JSON.stringify({ received: true }));

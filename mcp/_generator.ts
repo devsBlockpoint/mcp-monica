@@ -6,7 +6,15 @@ import matter from "gray-matter";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 const TOOLS_DIR = join(__dirname, "tools");
-const FUNCTIONS_DIR = join(__dirname, "..", "..", "supabase", "functions");
+/**
+ * Carpeta de edge functions con la que se cotejan las tools `implemented`.
+ *
+ * El default asume el layout de monorepo Supabase, pero en este proyecto las
+ * edge functions viven en OTRO repo (`eleve/supabase/functions`), así que ahí
+ * el chequeo no aplica. Se hace configurable en vez de dejar el build roto.
+ */
+const FUNCTIONS_DIR =
+  process.env.MCP_FUNCTIONS_DIR ?? join(__dirname, "..", "..", "supabase", "functions");
 const MANIFEST_PATH = join(__dirname, "manifest.json");
 
 const REQUIRED_KEYS = [
@@ -28,6 +36,13 @@ const VALID_STATUS = new Set([
 const args = new Set(process.argv.slice(2));
 const includePending = args.has("--include-pending");
 const skipFsCheck = args.has("--skip-fs-check") || process.env.MCP_SKIP_FN_FS_CHECK === "1";
+
+if (!skipFsCheck && !existsSync(FUNCTIONS_DIR)) {
+  console.warn(
+    `[mcp:build] no existe ${FUNCTIONS_DIR}: se omite el cotejo con edge functions.\n` +
+      `            (las edge functions viven en el repo de la app; usá MCP_FUNCTIONS_DIR para apuntarlas)`,
+  );
+}
 
 interface ToolFrontmatter {
   tool_name: string;
@@ -79,7 +94,16 @@ for (const file of files) {
     );
   }
 
-  if (!skipFsCheck && fm.implementation_status === "implemented" && typeof fm.edge_function === "string") {
+  // Solo se cotejan las edge functions si la carpeta existe: si no está (porque
+  // viven en otro repo), el chequeo se omite con un aviso en vez de romper el
+  // build. Sin esto, `npm run mcp:build` es inejecutable acá y no se puede
+  // regenerar el manifest al agregar una tool.
+  if (
+    !skipFsCheck &&
+    existsSync(FUNCTIONS_DIR) &&
+    fm.implementation_status === "implemented" &&
+    typeof fm.edge_function === "string"
+  ) {
     const fnDir = join(FUNCTIONS_DIR, fm.edge_function);
     if (!existsSync(fnDir)) {
       errors.push(

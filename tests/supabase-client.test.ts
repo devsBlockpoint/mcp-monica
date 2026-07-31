@@ -8,7 +8,7 @@ const baseConfig = {
 };
 
 function mockFetch(response: { status: number; body?: unknown; delay?: number }): typeof fetch {
-  return (async (_input: RequestInfo | URL, init?: RequestInit) => {
+  return (async (_input: string | URL, init?: RequestInit) => {
     if (response.delay) {
       await new Promise<void>((resolve, reject) => {
         const t = setTimeout(resolve, response.delay);
@@ -45,7 +45,7 @@ describe("callEdgeFunction", () => {
   test("posts to correct URL with auth header and JSON body", async () => {
     let capturedUrl = "";
     let capturedInit: RequestInit | undefined;
-    const fetchImpl: typeof fetch = (async (input: RequestInfo | URL, init?: RequestInit) => {
+    const fetchImpl: typeof fetch = (async (input: string | URL, init?: RequestInit) => {
       capturedUrl = typeof input === "string" ? input : input.toString();
       capturedInit = init;
       return new Response(JSON.stringify({ ok: 1 }), { status: 200 });
@@ -105,5 +105,39 @@ describe("callEdgeFunction", () => {
     if (!result.ok) {
       expect(result.error.message).toBe("Edge function timeout");
     }
+  });
+});
+
+describe("token por llamada (authOverride)", () => {
+  const base = { baseUrl: "https://x.supabase.co", serviceRoleKey: "SERVICE_ROLE" };
+  const espia = () => {
+    const calls: any[] = [];
+    const f = async (url: any, init: any) => {
+      calls.push({ url, init });
+      return new Response(JSON.stringify({ ok: true }), { status: 200 });
+    };
+    return { calls, f: f as unknown as typeof fetch };
+  };
+
+  test("sin override manda la service_role", async () => {
+    const { calls, f } = espia();
+    await callEdgeFunction({ ...base, fetchImpl: f }, "book-appointment", {});
+    expect(calls[0].init.headers.Authorization).toBe("Bearer SERVICE_ROLE");
+  });
+
+  test("con override manda ESE token y no la service_role", async () => {
+    // Sin esto, ingest-call-transcript recibiría la service_role, la compararía
+    // contra su INGEST_CALL_TOKEN y devolvería 401 en cada entrega: ElevenLabs
+    // reintenta, falla, y los transcripts nunca llegan al CRM — en silencio.
+    const { calls, f } = espia();
+    await callEdgeFunction({ ...base, fetchImpl: f }, "ingest-call-transcript", {}, "INGEST_TOK");
+    expect(calls[0].init.headers.Authorization).toBe("Bearer INGEST_TOK");
+  });
+
+  test("un override vacío cae a la service_role", async () => {
+    // Si la env var existe pero está vacía, no debe romper el reenvío.
+    const { calls, f } = espia();
+    await callEdgeFunction({ ...base, fetchImpl: f }, "ingest-call-transcript", {}, "");
+    expect(calls[0].init.headers.Authorization).toBe("Bearer SERVICE_ROLE");
   });
 });

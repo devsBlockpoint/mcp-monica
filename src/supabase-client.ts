@@ -17,6 +17,16 @@ export async function callEdgeFunction(
   config: SupabaseClientConfig,
   name: string,
   input: unknown,
+  /**
+   * Token alternativo para ESTA llamada, en lugar de la service_role.
+   *
+   * Existe para las edge functions que traen su propio guard (hoy
+   * `ingest-call-transcript` con INGEST_CALL_TOKEN). Sin esto, la función
+   * recibiría la service_role y la compararía contra su token propio: 401 en
+   * cada entrega, y los transcripts dejarían de llegar al CRM en silencio,
+   * porque ElevenLabs reintenta y falla sin que nadie se entere.
+   */
+  authOverride?: string,
 ): Promise<EdgeFunctionResult> {
   const url = `${config.baseUrl.replace(/\/$/, "")}/functions/v1/${name}`;
   const fetchImpl = config.fetchImpl ?? fetch;
@@ -30,7 +40,7 @@ export async function callEdgeFunction(
     response = await fetchImpl(url, {
       method: "POST",
       headers: {
-        Authorization: `Bearer ${config.serviceRoleKey}`,
+        Authorization: `Bearer ${authOverride || config.serviceRoleKey}`,
         "Content-Type": "application/json",
       },
       body: JSON.stringify(input),

@@ -7,14 +7,35 @@ import { createHmac, timingSafeEqual } from "node:crypto";
  *   - post-call: verify HMAC signature, then persist/forward the outcome
  */
 
-/** Extract a Mexican national (10-digit) phone from an ElevenLabs caller_id. */
+/**
+ * Extract a Mexican national (10-digit) phone from an ElevenLabs caller_id.
+ *
+ * This must produce the SAME canonical form as `normalizarTelefono()` in
+ * eleve's `supabase/functions/_shared/telefono.ts`, because whatever comes out
+ * of here becomes the `external_id` in `channel_identities`, which has
+ * UNIQUE(channel, external_id). Two shapes for the same person means two
+ * parallel identities, and the crosswalk stops working.
+ *
+ * It is duplicated rather than imported because mcp-monica is a separate repo
+ * with its own Docker build context — there is no import path to eleve. Keep
+ * the two in sync; the shapes are covered by tests on both sides.
+ *
+ * Previously this only understood a 12-digit `52` prefix and missed the
+ * 13-digit `521` legacy WhatsApp-MX prefix, so the same caller arriving in the
+ * two formats produced two different identities.
+ */
 export function normalizeCallerId(caller?: string): string | null {
   if (!caller) return null;
-  const digits = caller.replace(/\D/g, "");
-  if (!digits) return null;
-  // Drop a leading 52 country code from a 12-digit number -> 10-digit national.
-  if (digits.length === 12 && digits.startsWith("52")) return digits.slice(2);
-  return digits;
+  const d = caller.replace(/\D/g, "");
+  if (!d) return null;
+  // 52 + 1 + national (13) — legacy WhatsApp MX shape.
+  if (d.length === 13 && d.startsWith("521")) return d.slice(3);
+  // 52 + national (12)
+  if (d.length === 12 && d.startsWith("52")) return d.slice(2);
+  // 1 + national (11)
+  if (d.length === 11 && d.startsWith("1")) return d.slice(1);
+  // Already national, or foreign/partial: returned as-is, never guessed.
+  return d;
 }
 
 export interface InitResponse {
@@ -23,20 +44,30 @@ export interface InitResponse {
 }
 
 /**
- * Map a search-patient result (the `pacientes` array, untyped as it comes from
- * an edge function) into the ElevenLabs initiation response.
+ * Map a `patient-context` edge-function result into the ElevenLabs initiation
+ * response.
+ *
+ * `patient_context` is the pre-rendered "who is this and where are they at"
+ * block (A01, the living record). It is rendered edge-side on purpose: the same
+ * renderer serves the text channel too, so both channels read the exact same
+ * words. Rendering it here would fork it into two versions that drift.
+ *
+ * ElevenLabs dynamic variables must be strings — an absent value has to be ""
+ * rather than null/undefined, or the substitution leaks the literal token into
+ * what Mónica says out loud.
  */
-export function buildInitResponse(patients: unknown): InitResponse {
-  const list = Array.isArray(patients) ? patients : [];
-  const p = (list[0] ?? null) as Record<string, unknown> | null;
-  const name = p && typeof p.nombre_completo === "string" ? p.nombre_completo : "";
-  const id = p && typeof p.id === "string" ? p.id : "";
+export function buildInitResponse(ctx: unknown): InitResponse {
+  const c = (ctx ?? null) as Record<string, unknown> | null;
+  const known = c?.patient_known === true;
   return {
     type: "conversation_initiation_client_data",
     dynamic_variables: {
-      patient_known: p ? "true" : "false",
-      patient_name: name,
-      patient_id: id,
+      patient_known: known ? "true" : "false",
+      patient_name: typeof c?.patient_name === "string" ? c.patient_name : "",
+      patient_id: typeof c?.patient_id === "string" ? c.patient_id : "",
+      // Empty string when there is nothing worth saying. The prompt is written
+      // so that an empty block simply disappears instead of being narrated.
+      patient_context: typeof c?.patient_context === "string" ? c.patient_context : "",
     },
   };
 }

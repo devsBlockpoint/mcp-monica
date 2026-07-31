@@ -29,6 +29,9 @@ COPY --from=deps-full /app/node_modules ./node_modules
 COPY package.json tsconfig.json ./
 COPY src ./src
 COPY mcp ./mcp
+# Reglas de canal (entradas del proyector de prompt). Viven acá y no en el
+# monorepo porque el contexto de build de esta imagen es solo mcp-monica.
+COPY prompt ./prompt
 
 USER app
 

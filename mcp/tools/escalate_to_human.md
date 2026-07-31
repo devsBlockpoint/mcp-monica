@@ -5,9 +5,24 @@ mcp_exposed: true
 description: Escala la conversación a un operador humano. Cambia agent_mode='human' y crea entrada en escalation_queue.
 input_schema:
   type: object
-  required: [conversation_id, motivo]
+  description: "Dos vías de identidad: en TEXTO se manda conversation_id; en una LLAMADA se manda canal='llamada' + external_id."
+  required: [motivo]
   properties:
-    conversation_id: { type: string, format: uuid }
+    conversation_id:
+      type: string
+      format: uuid
+      description: "Solo en texto (WhatsApp/Instagram/Messenger): el id de la conversación actual."
+    canal:
+      type: string
+      enum: [whatsapp, llamada]
+      default: whatsapp
+      description: "Usar 'llamada' cuando la conversación es telefónica."
+    external_id:
+      type: string
+      description: "Solo en llamada: el identificador de la conversación de voz en curso."
+    telefono:
+      type: string
+      description: "Solo en llamada: el número de quien llama, solo dígitos (ej. '6682680353')."
     motivo: { type: string, description: "Razón de la escalación" }
     prioridad:
       type: string
@@ -24,6 +39,7 @@ output_schema:
 side_effects:
   - "UPDATE whatsapp_conversations SET status='escalated', escalation_level=1, agent_mode='human'"
   - "INSERT escalation_queue (status='pending', reason=motivo, priority=prioridad)"
+  - "En canal='llamada': UPSERT de la conversación por (channel,external_id) — durante la llamada todavía no existe; se crea ya marcada como escalada."
 auth: service_role
 errors:
   - code: conversation_not_found
@@ -42,3 +58,18 @@ Wrapper sobre `conversations-control action='escalate'` documentado como tool pa
 - Caso fuera de scope (queja, tema legal, complejidad médica)
 - Usuario pide expresamente hablar con humano
 - Sentiment muy negativo detectado
+
+## En una llamada de voz
+
+Durante una llamada la conversación todavía no existe en la base (se crea al colgar),
+así que la identidad va por el canal:
+
+```
+{ "canal": "llamada",
+  "external_id": "<id de la conversación de voz en curso>",
+  "telefono": "<número de quien llama, solo dígitos>",
+  "motivo": "...", "prioridad": "high" }
+```
+
+La escalación queda registrada al instante y **sobrevive al cierre de la llamada**:
+el webhook post-call respeta `status='escalated'` en vez de marcarla resuelta.

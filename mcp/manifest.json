@@ -1,6 +1,6 @@
 {
   "version": "1",
-  "generated_at": "2026-06-18T18:27:30.684Z",
+  "generated_at": "2026-07-30T21:12:02.491Z",
   "tools": [
     {
       "tool_name": "actualizar_datos_contacto",
@@ -291,14 +291,32 @@
       "description": "Escala la conversación a un operador humano. Cambia agent_mode='human' y crea entrada en escalation_queue.",
       "input_schema": {
         "type": "object",
+        "description": "Dos vías de identidad: en TEXTO se manda conversation_id; en una LLAMADA se manda canal='llamada' + external_id.",
         "required": [
-          "conversation_id",
           "motivo"
         ],
         "properties": {
           "conversation_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Solo en texto (WhatsApp/Instagram/Messenger): el id de la conversación actual."
+          },
+          "canal": {
+            "type": "string",
+            "enum": [
+              "whatsapp",
+              "llamada"
+            ],
+            "default": "whatsapp",
+            "description": "Usar 'llamada' cuando la conversación es telefónica."
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Solo en llamada: el identificador de la conversación de voz en curso."
+          },
+          "telefono": {
+            "type": "string",
+            "description": "Solo en llamada: el número de quien llama, solo dígitos (ej. '6682680353')."
           },
           "motivo": {
             "type": "string",
